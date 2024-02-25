@@ -1,7 +1,7 @@
 <?php
     require_once __DIR__ . "/lib/ServiceWorkerGenerator.php";
 
-    (new rogoss\core\ServiceWorkerGenerator())
+    (new rogoss\ServiceWorkerGenerator())
 
         ->cacheName("PHPSWGen_Test")
 

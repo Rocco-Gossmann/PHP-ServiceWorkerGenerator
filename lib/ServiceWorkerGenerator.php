@@ -1,7 +1,5 @@
 <?php
-namespace rogoss\core;
-
-require_once __DIR__ . '/core/FileHandler.php';
+namespace rogoss;
 
 class ServiceWorkerGeneratorException extends \Exception {
     const FILE_OUTSIDE_DOCUMENT_ROOT = 1;
@@ -30,13 +28,13 @@ class ServiceWorkerGenerator
             $sLockFileName,
             'LockFileName',
             ServiceWorkerGeneratorException::INVALID_LOCKFILENAME,
-            '0-9a-z_-.'
+            '0-9a-z_\-.\/'
         );
 
         // TODO: read lock file and restore MD5 List from that
     }
 
-    public function cacheName($sCacheName) {
+    public function cachePrefix($sCacheName) {
         $this->_sCacheName =
             $this->_sanitizeMetaName(
                 $sCacheName,
@@ -69,6 +67,8 @@ class ServiceWorkerGenerator
 
         $bCacheFirst = count($this->aCacheFirst) > 0;
 
+        // TODO: Code for cache cleanup on regeneration
+        
         echo "\n const cache_name='", $this->_sCacheName, "';";
 
         $CacheCMDs = [];
@@ -80,6 +80,7 @@ class ServiceWorkerGenerator
 
             $CacheCMDs[] = ' await cache.addAll(cacheFirst) ';
         }
+
 
         if (count($CacheCMDs)) {
             $sJSActivateCMDs = implode(";\n\t", $CacheCMDs);
@@ -161,7 +162,7 @@ class ServiceWorkerGenerator
         $aList[] = $this->_trimPath($sFilePath);
     }
 
-    private function _sanitizeMetaName($sStr, $sErrorValue, $iErrorCode, $sRegEx = '0-9a-z_-')
+    private function _sanitizeMetaName($sStr, $sErrorValue, $iErrorCode, $sRegEx = '0-9a-z_\-')
     {
         $sTrimmed = trim($sStr);
 
@@ -171,11 +172,16 @@ class ServiceWorkerGenerator
                 $iErrorCode
             );
 
-        if (!preg_match('/^[' . preg_quote($sRegEx, '/') . ']$/gi', $sTrimmed))
+        $sRegEx = "/^[" . $sRegEx . "]+$/i";
+        $arr = []; 
+
+        if (!preg_match($sRegEx, $sTrimmed, $arr)) {
+            error_log(var_export($arr));
             throw new ServiceWorkerGeneratorException(
-                "$sErrorValue can only contain characters'$sRegEx'",
+                "$sErrorValue '$sTrimmed' can only contain characters'$sRegEx'",
                 $iErrorCode
             );
+        }
 
         return $sTrimmed;
     }
