@@ -3,7 +3,7 @@
 
     (new rogoss\ServiceWorkerGenerator())
 
-        ->cacheName("PHPSWGen_Test")
+        ->cachePrefix("PHPSWGen_Test")
 
         ->fileCacheFirst("./index.html")
         ->dirCacheFirst("./vendor")

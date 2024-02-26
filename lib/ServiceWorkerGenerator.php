@@ -1,28 +1,49 @@
 <?php
 namespace rogoss;
 
+/** 
+ * @author Rocco Gossmann <github.com/rocco-gossmann>
+ * @license MIT
+ */
+
+
+/** @class Thrown by ServiceWorkerGenerator, in case anything goes wrong */
 class ServiceWorkerGeneratorException extends \Exception {
     const FILE_OUTSIDE_DOCUMENT_ROOT = 1;
     const INVALID_CACHENAME = 2;
     const INVALID_LOCKFILENAME = 3;
 }
 
-/**
- * A class, meant to make it easy to generate ServiceWorkers, to cache
+/** @class meant to make it easy to generate ServiceWorkers, to cache
  * Files on Browsers
  */
 class ServiceWorkerGenerator
 {
-    private $_sPregDocRoot = '';
-    private $_sCacheName = '__PhpSWGen__';
+    /** @var {string} Helper to validate filepaths */
+    private $sPregDocRoot = '';
+
+    /** @var {string} The name of the cache, that the ServiceWorker will store its files in */
+    private $sCacheName = '__PhpSWGen__';
+
+    /** @var {string[]} Filenames to be handled cache first */
     private $aCacheFirst = [];
+
+    /** @var {string[]} List of files handled by the Service-Worker [ md5(content) => filename ] */
     private $aFileMD5 = [];
+
+    /** @var {string} Path to the file containing meta data for already generated Service-Workers */
     private $sLockFileName = 'sw.lock';
+
+    /** @var {integer} Internal value used, to force the SW to update even if the filelist has not changed */
+    private $iTimeStamp = 0;
+
+    /** @var {boolean} Keeps track of if a new Lockfile and ServiceWorker needed to be generated */
+    private $bChanged = false;
 
     public function __construct($sLockFileName = 'sw.lock') {
         ob_start();
 
-        $this->_sPregDocRoot = '/^' . preg_quote($_SERVER['DOCUMENT_ROOT'], '/') . '/';
+        $this->sPregDocRoot = '/^' . preg_quote($_SERVER['DOCUMENT_ROOT'], '/') . '/';
 
         $this->sLockFileName = $this->_sanitizeMetaName(
             $sLockFileName,
@@ -31,11 +52,24 @@ class ServiceWorkerGenerator
             '0-9a-z_\-.\/'
         );
 
-        // TODO: read lock file and restore MD5 List from that
+        if(file_exists($this->sLockFileName)) {
+            require $this->sLockFileName;
+
+            if(empty($iTime)) 
+                $this->bChanged = true;
+            else 
+                $this->iTimeStamp = $iTime;
+
+        } else {
+            $this->iTimeStamp = time();
+            $this->bChanged = true;
+        }
+
+        // TODO: restore MD5 List from that
     }
 
     public function cachePrefix($sCacheName) {
-        $this->_sCacheName =
+        $this->sCacheName =
             $this->_sanitizeMetaName(
                 $sCacheName,
                 'cachename',
@@ -65,11 +99,17 @@ class ServiceWorkerGenerator
         ob_end_clean();
         header('content-type: application/javascript');
 
+        if($this->bChanged) {
+            $this->iTimeStamp = time();
+        }
+
         $bCacheFirst = count($this->aCacheFirst) > 0;
 
         // TODO: Code for cache cleanup on regeneration
-        
-        echo "\n const cache_name='", $this->_sCacheName, "';";
+
+         
+        echo "/* ts:", $this->iTimeStamp, " */\n",
+            "\n const cache_name='", $this->sCacheName, "';";
 
         $CacheCMDs = [];
 
@@ -91,7 +131,7 @@ class ServiceWorkerGenerator
                     const inst = async () => {
                         const cache = await caches.open(cache_name);
 
-                        $sJSActivateCMDs
+                        {$sJSActivateCMDs}
                     }
 
                     event.waitUntil(inst());
@@ -99,7 +139,19 @@ class ServiceWorkerGenerator
                 JS;
         }
 
+        $this->_generateLockFile();
+
         exit;
+    }
+
+    private function _generateLockFile() {
+        file_put_contents($this->sLockFileName, <<<PHP
+<?php
+    \$iTime = {$this->iTimeStamp};
+PHP
+);
+        //TODO: Put MD5-Filelist in
+
     }
 
     private function _recursiveTransfere($fncCallback, $sSrcDir) {
@@ -138,21 +190,19 @@ class ServiceWorkerGenerator
         }
     }
 
-    private function _sanitizeFilePath($sFile)
-    {
+    private function _sanitizeFilePath($sFile) {
         $sFullName = realpath($sFile);
-        if (!preg_match($this->_sPregDocRoot, $sFullName))
+        if (!preg_match($this->sPregDocRoot, $sFullName))
             throw
                 new ServiceWorkerGeneratorException(
-                    "'" . $sFile . "' is outside of '" . $_SERVER['DOCUMENT_ROOT'] . "' (" . $sFullName . ' => ' . $this->_sPregDocRoot . ')', ServiceWorkerGeneratorException::FILE_OUTSIDE_DOCUMENT_ROOT
+                    "'" . $sFile . "' is outside of '" . $_SERVER['DOCUMENT_ROOT'] . "' (" . $sFullName . ' => ' . $this->sPregDocRoot . ')', ServiceWorkerGeneratorException::FILE_OUTSIDE_DOCUMENT_ROOT
                 );
 
         return $sFullName;
     }
 
-    private function _trimPath($sFile)
-    {
-        return preg_replace($this->_sPregDocRoot, '', $sFile);
+    private function _trimPath($sFile) {
+        return preg_replace($this->sPregDocRoot, '', $sFile);
     }
 
     private function _addFile(&$aList, $sFile) {
