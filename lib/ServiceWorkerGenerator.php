@@ -28,6 +28,9 @@ class ServiceWorkerGenerator
     /** @var {string[]} Filenames to be handled cache first */
     private $aCacheFirst = [];
 
+    /** @var {string[]} A List of cache names, that the Service-Worker is supposed to clean up */
+    private $aCacheCleanup = [];
+
     /** @var {string[]} List of files handled by the Service-Worker [ md5(content) => filename ] */
     private $aFileMD5 = [];
 
@@ -68,13 +71,20 @@ class ServiceWorkerGenerator
         // TODO: restore MD5 List from that
     }
 
+    /**
+     * changes the name of the cache, that the service-worker will use
+     */
     public function cachePrefix($sCacheName) {
+
+        $this->aCacheCleanup[] = $this->sCacheName;
+
         $this->sCacheName =
             $this->_sanitizeMetaName(
                 $sCacheName,
                 'cachename',
                 ServiceWorkerGeneratorException::INVALID_CACHENAME
             );
+
 
         // TODO: Handle cleanup for renaming existing caches
 
@@ -104,39 +114,37 @@ class ServiceWorkerGenerator
         }
 
         $bCacheFirst = count($this->aCacheFirst) > 0;
+        $bCacheClean = count($this->aCacheCleanup) > 0;
 
-        // TODO: Code for cache cleanup on regeneration
-
-         
         echo "/* ts:", $this->iTimeStamp, " */\n",
             "\n const cache_name='", $this->sCacheName, "';";
 
         $CacheCMDs = [];
 
-        if ($bCacheFirst) {
-            echo "\nconst cacheFirst = [\n\t",
-                implode(",\n\t", array_map(fn($e) => '"' . $e . '"', $this->aCacheFirst)),
-                "\n];\n\n";
+        if($bCacheClean) 
+            $this->_printJSStrArray("cacheCleanup", $this->aCacheCleanup);
 
+        if ($bCacheFirst) {
+            $this->_printJSStrArray("cacheFirst", $this->aCacheFirst);
             $CacheCMDs[] = ' await cache.addAll(cacheFirst) ';
         }
 
 
         if (count($CacheCMDs)) {
-            $sJSActivateCMDs = implode(";\n\t", $CacheCMDs);
+            $sJSInstallCMDs = implode(";\n\t", $CacheCMDs);
 
             echo <<<JS
-                self.addEventListener("activate", (event) => {
+                self.addEventListener("install", (event) => {
 
                     const inst = async () => {
                         const cache = await caches.open(cache_name);
 
-                        {$sJSActivateCMDs}
+                        {$sJSInstallCMDs}
                     }
 
                     event.waitUntil(inst());
                 });
-                JS;
+JS;
         }
 
         $this->_generateLockFile();
@@ -145,9 +153,13 @@ class ServiceWorkerGenerator
     }
 
     private function _generateLockFile() {
+        $sCacheCleanup = var_export($this->aCacheCleanup, true);
+
         file_put_contents($this->sLockFileName, <<<PHP
 <?php
     \$iTime = {$this->iTimeStamp};
+
+    \$aCacheClean = $sCacheCleanup; 
 PHP
 );
         //TODO: Put MD5-Filelist in
@@ -235,4 +247,12 @@ PHP
 
         return $sTrimmed;
     }
+
+    private function _printJSStrArray($sJSArrName, $arr) {
+        echo "\nconst {$sJSArrName} = [\n\t",
+            implode(",\n\t", array_map(fn($e) => '"' . $e . '"', $arr)),
+            "\n];\n\n";
+
+    }
+
 }
