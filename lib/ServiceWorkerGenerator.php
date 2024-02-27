@@ -63,6 +63,11 @@ class ServiceWorkerGenerator
             else 
                 $this->iTimeStamp = $iTime;
 
+            if(isset($aCacheClean) and is_array($aCacheClean)) 
+                $this->aCacheCleanup = $aCacheClean;
+
+            if(isset($sCacheName)) $this->sCacheName = "" . $sCacheName;
+
         } else {
             $this->iTimeStamp = time();
             $this->bChanged = true;
@@ -73,10 +78,14 @@ class ServiceWorkerGenerator
 
     /**
      * changes the name of the cache, that the service-worker will use
+     * @param  {string} $sCacheName 
+     * @return $this 
      */
     public function cachePrefix($sCacheName) {
 
-        $this->aCacheCleanup[] = $this->sCacheName;
+        if($sCacheName === $this->sCacheName) return $this;
+
+        $sOldCacheName = $this->sCacheName;
 
         $this->sCacheName =
             $this->_sanitizeMetaName(
@@ -85,12 +94,19 @@ class ServiceWorkerGenerator
                 ServiceWorkerGeneratorException::INVALID_CACHENAME
             );
 
+        $this->aCacheCleanup[$sOldCacheName] = $sOldCacheName;
 
-        // TODO: Handle cleanup for renaming existing caches
+        $this->bChanged = true;
 
         return $this;
     }
 
+    /**
+     * Registers all Files within the given Directory and its subdirectories to be precached and delivered cache first
+     *
+     * @param  {string} $sDir  - the path to the directory
+     * @return  $this
+     */
     public function dirCacheFirst($sDir) {
         self::_recursiveTransfere(
             fn($src) => $this->aCacheFirst[$src] = $src,
@@ -100,11 +116,21 @@ class ServiceWorkerGenerator
         return $this;
     }
 
+    /**
+     * Registers the given file to be precached and delivered cache first
+     *
+     * @param  {string} $sFile  - the path to the file 
+     * @return  $this
+     */
     public function fileCacheFirst($sFile) {
         $this->_addFile($this->aCacheFirst, $sFile);
         return $this;
     }
 
+    /**
+     * Generates the ServiceWorkers content and sends it to the output and ends the script execution.
+     * @return void
+     */
     public function printAndExit() {
         ob_end_clean();
         header('content-type: application/javascript');
@@ -123,12 +149,12 @@ class ServiceWorkerGenerator
 
         if($bCacheClean) 
             $this->_printJSStrArray("cacheCleanup", $this->aCacheCleanup);
+        //TODO: Make ServiceWorker do the Cleanup thing
 
         if ($bCacheFirst) {
             $this->_printJSStrArray("cacheFirst", $this->aCacheFirst);
             $CacheCMDs[] = ' await cache.addAll(cacheFirst) ';
         }
-
 
         if (count($CacheCMDs)) {
             $sJSInstallCMDs = implode(";\n\t", $CacheCMDs);
@@ -152,12 +178,15 @@ JS;
         exit;
     }
 
+    /** @ignore */
     private function _generateLockFile() {
         $sCacheCleanup = var_export($this->aCacheCleanup, true);
 
         file_put_contents($this->sLockFileName, <<<PHP
 <?php
     \$iTime = {$this->iTimeStamp};
+
+    \$sCacheName = "{$this->sCacheName}";
 
     \$aCacheClean = $sCacheCleanup; 
 PHP
@@ -166,6 +195,7 @@ PHP
 
     }
 
+    /** @ignore */
     private function _recursiveTransfere($fncCallback, $sSrcDir) {
         if (empty($sSrcDir) or
                 !is_string($sSrcDir))
@@ -202,6 +232,7 @@ PHP
         }
     }
 
+    /** @ignore */
     private function _sanitizeFilePath($sFile) {
         $sFullName = realpath($sFile);
         if (!preg_match($this->sPregDocRoot, $sFullName))
@@ -213,10 +244,12 @@ PHP
         return $sFullName;
     }
 
+    /** @ignore */
     private function _trimPath($sFile) {
         return preg_replace($this->sPregDocRoot, '', $sFile);
     }
 
+    /** @ignore */
     private function _addFile(&$aList, $sFile) {
         $sFilePath = $this->_sanitizeFilePath($sFile);
 
@@ -224,6 +257,7 @@ PHP
         $aList[] = $this->_trimPath($sFilePath);
     }
 
+    /** @ignore */
     private function _sanitizeMetaName($sStr, $sErrorValue, $iErrorCode, $sRegEx = '0-9a-z_\-')
     {
         $sTrimmed = trim($sStr);
@@ -248,7 +282,9 @@ PHP
         return $sTrimmed;
     }
 
+    /** @ignore */
     private function _printJSStrArray($sJSArrName, $arr) {
+
         echo "\nconst {$sJSArrName} = [\n\t",
             implode(",\n\t", array_map(fn($e) => '"' . $e . '"', $arr)),
             "\n];\n\n";
