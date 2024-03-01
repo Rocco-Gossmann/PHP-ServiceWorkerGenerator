@@ -90,15 +90,13 @@ class ServiceWorkerGenerator
             if (isset($sCacheName))
                 $this->sCacheName = '' . $sCacheName;
 
-            if(isset($aFiles))
+            // DONE: restore MD5 List from that
+            if (isset($aFiles))
                 $this->aFileMD5 = $aFiles;
-
         } else {
             $this->iTimeStamp = time();
             $this->bChanged = true;
         }
-
-        // TODO: restore MD5 List from that
     }
 
     /**
@@ -151,7 +149,8 @@ class ServiceWorkerGenerator
      */
     public function fileCacheFirst($sFile)
     {
-        $this->_addFile($this->aCacheFirst, $sFile);
+        $sFilePath = $this->_sanitizeFilePath($sFile);
+        $this->_addFile($this->aCacheFirst, $sFilePath);
         return $this;
     }
 
@@ -189,16 +188,58 @@ class ServiceWorkerGenerator
             $sJSInstallCMDs = implode(";\n\t", $CacheCMDs);
 
             echo <<<JS
-                                self.addEventListener("install", (event) => {
 
-                                    const inst = async () => {
-                                        const cache = await caches.open(cache_name);
+                    function postMessage(...args) {
+                        self.clients.matchAll().then(clients => {
+                            clients.forEach(client => {
+                                client.postMessage({...args});
+                            })
+                        })
+                    }
 
-                                        {$sJSInstallCMDs}
-                                    }
+                    self.addEventListener("message", async (event) => {
+                        console.log("MainThread send:", event.data)
 
-                                    event.waitUntil(inst());
-                                });
+                        if(event.data === "skip_waiting") {
+                            console.log("Skip Waiting");
+                            await self.skipWaiting();
+                            postMessage("wait_finished");
+                        }
+
+                        postMessage("Thanks");
+                    })
+
+                    self.addEventListener("install", (event) => {
+
+                        const inst = async () => {
+                            const cache = await caches.open(cache_name);
+
+                            {$sJSInstallCMDs}
+                        }
+
+                        event.waitUntil(inst());
+                    });
+
+                    self.addEventListener("fetch", (event) => {
+                        const req = async () => {
+
+                            for(const file of cacheFirst) {
+                                if(event.request.url.endsWith(file)) {
+                                    postMessage("foundfile", file);
+                                    const cache = await caches.open(cache_name);                                   
+
+                                    return cache.match(event.request.clone());
+                                }
+                                postMessage("missed", file);
+                            }
+
+                            return fetch(event.request.clone());
+
+                        }
+
+                        event.respondWith(req());
+
+                    })
                 JS;
         }
 
@@ -260,15 +301,12 @@ class ServiceWorkerGenerator
                 if ($oF->isDot())
                     continue;
 
-                $sFullName = $this->_sanitizeFilePath(
-                    $sDir . '/' . $oF->getFilename(),
-                    false
-                );
+                $sFullName = $sDir . '/' . $oF->getFilename();
 
                 if ($oF->isDir()) {
                     array_push($aDirs, $sFullName);
                 } else {
-                    $fncCallback($this->_trimPath($sFullName));
+                    $fncCallback($sFullName);
                 }
             }
         }
@@ -283,7 +321,7 @@ class ServiceWorkerGenerator
         if (!preg_match($this->sPregDocRoot, $sFullName))
             throw
                 new ServiceWorkerGeneratorException(
-                    "'" . $sFile . "' is outside of '" . $_SERVER['DOCUMENT_ROOT'] . "' (" . $sFullName . ' => ' . $this->sPregDocRoot . ')',
+                    "'" . $sFile . "' is outside of '" . $_SERVER['DOCUMENT_ROOT'] . "' ('$sFile' => '" . $sFullName . '\' => ' . $this->sPregDocRoot . ')',
                     ServiceWorkerGeneratorException::FILE_OUTSIDE_DOCUMENT_ROOT
                 );
 
@@ -295,7 +333,7 @@ class ServiceWorkerGenerator
      */
     private function _trimPath($sFile)
     {
-        return preg_replace($this->sPregDocRoot, '.', $sFile);
+        return preg_replace($this->sPregDocRoot, '', $sFile);
     }
 
     /**
@@ -306,9 +344,9 @@ class ServiceWorkerGenerator
         $sFilePath = $this->_sanitizeFilePath($sFile);
         $sFileMD5 = md5(file_get_contents($sFilePath));
 
-        if(isset($this->aFileMD5[$sFilePath])) {
-            if($this->aFileMD5[$sFilePath] !== $sFileMD5) {
-                $this->bChanged = true;  
+        if (isset($this->aFileMD5[$sFilePath])) {
+            if ($this->aFileMD5[$sFilePath] !== $sFileMD5) {
+                $this->bChanged = true;
             }
         }
 

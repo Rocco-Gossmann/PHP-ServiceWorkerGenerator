@@ -1,13 +1,31 @@
-if(window.navigator.serviceWorker) {
+if (navigator.serviceWorker) {
+    navigator.serviceWorker
+        .register("./sw.php", {
+            scope: "./",
+        })
+        .then(function (registration) {
+            let sw = null;
 
-    window.navigator.serviceWorker
-        .register("./sw.php", { scope: "./" })
-        .then( (req) => {
+            if (registration.active) {
+                console.log("active worker");
 
-            if(req.waiting) {
-//                window.location.href=window.location.href
+                registration.active.postMessage("Let's begin");
+                sw = registration.active;
             }
 
-        } )
-    
+            if (registration.waiting) {
+                console.log("waiting worker");
+
+                registration.waiting.postMessage("skip_waiting");
+                sw = registration.waiting;
+            } else if (registration.installing) {
+                console.log("installing worker");
+
+                registration.installing.postMessage("Welcome Home");
+            }
+
+            navigator.serviceWorker.onmessage = function(data) {
+                console.log("got message: ", data.data)
+            }
+        });
 }

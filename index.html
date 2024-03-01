@@ -2,6 +2,15 @@
 <html>
     <head>
         <script type="text/javascript" src="./js/sw.js"></script>
+
+        <script>
+            window.addEventListener("load", async () => {
+                window.setTimeout(async () => {
+                    const res = await fetch("./vendor/dummy1.txt")
+                    console.log(res);
+                }, 3000)
+            })
+        </script>
     </head>
 
     <body></body>
