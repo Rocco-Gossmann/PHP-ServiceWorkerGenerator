@@ -7,6 +7,7 @@ namespace rogoss;
  * @license MIT
  */
 
+
 /**
  * @class Thrown by ServiceWorkerGenerator, in case anything goes wrong
  */
@@ -15,6 +16,7 @@ class ServiceWorkerGeneratorException extends \Exception
     const FILE_OUTSIDE_DOCUMENT_ROOT = 1;
     const INVALID_CACHENAME = 2;
     const INVALID_LOCKFILENAME = 3;
+    const INVALID_DIRECTORYINDEX_PATH = 4;
 }
 
 /**
@@ -63,6 +65,10 @@ class ServiceWorkerGenerator
      */
     private $bChanged = false;
 
+    /**
+     * The Constructor
+     * @param  {string} $sLockFileName - Path to the file containing meta data for already generated Service-Workers
+     */
     public function __construct($sLockFileName = 'sw.lock')
     {
         ob_start();
@@ -101,7 +107,7 @@ class ServiceWorkerGenerator
 
     /**
      * changes the name of the cache, that the service-worker will use
-     * @param  {string} $sCacheName
+     * @param  {string} $sCacheName  - the new name of the new cache
      * @return $this
      */
     public function cachePrefix($sCacheName)
@@ -126,8 +132,52 @@ class ServiceWorkerGenerator
     }
 
     /**
+     * Registers the given path to be precached and delivered cache first
+     * @param  {string} $sPath that the ServiceWorker will call directly
+     * @return  $this
+     */
+    public function enableDirectoryIndexCache($sPath)
+    {
+        //DONE: Check if path ends with '/'
+        if (!preg_match('/\/$/', $sPath))
+            throw new ServiceWorkerGeneratorException(
+                "Directory index path must end with '/'",
+                ServiceWorkerGeneratorException::INVALID_DIRECTORYINDEX_PATH
+            );
+
+        //DONE: Make sure path does not call any hidden directories
+        if (preg_match('/\/\.[^.]/', $sPath))
+            throw new ServiceWorkerGeneratorException(
+                "path must not contain a '/.'",
+                ServiceWorkerGeneratorException::INVALID_DIRECTORYINDEX_PATH
+            );
+
+        //DONE: Resolve all .. in the path without the path needing to physically exist on the physically exist on the Server.
+        $aParts = [];
+        foreach (explode('/', $sPath) as $sPart) {
+            if(empty($sPart) || $sPart === ".") continue;
+
+            elseif($sPart === "..") {
+                if(count($aParts)) array_pop($aParts);
+                else throw new ServiceWorkerGeneratorException(
+                    "path must not leave {$_SERVER['DOCUMENT_ROOT']}" ,
+                    ServiceWorkerGeneratorException::INVALID_DIRECTORYINDEX_PATH
+                );
+            }
+
+            else $aParts[] = $sPart;
+        }
+
+        $sPath = implode('/', $aParts);
+
+        if(empty($sPath)) $sPath = '/';
+
+        $this->aCacheFirst[$sPath] = $sPath;
+        return $this;
+    }
+
+    /**
      * Registers all Files within the given Directory and its subdirectories to be precached and delivered cache first
-     *
      * @param  {string} $sDir  - the path to the directory
      * @return  $this
      */
@@ -189,36 +239,35 @@ class ServiceWorkerGenerator
 
             $sJSCacheFirstFnc = $bCacheFirst
                 ? self::$_swtpl_cache
-                : "";
+                : '';
 
-            echo 
-                self::$_swtpl_communications, 
+            echo self::$_swtpl_communications,
                 <<<JS
 
-                    self.addEventListener("install", (event) => {
-                        const inst = async () => {
-                            const cache = await caches.open(cache_name);
+                                    self.addEventListener("install", (event) => {
+                                        const inst = async () => {
+                                            const cache = await caches.open(cache_name);
 
-                            {$sJSInstallCMDs}
+                                            {$sJSInstallCMDs}
 
-                        }
+                                        }
 
-                        event.waitUntil(inst());
-                    });
+                                        event.waitUntil(inst());
+                                    });
 
-                    self.addEventListener("fetch", (event) => {
+                                    self.addEventListener("fetch", (event) => {
 
-                        const req = async () => {
+                                        const req = async () => {
 
-                            {$sJSCacheFirstFnc}
+                                            {$sJSCacheFirstFnc}
 
-                            return fetch(event.request.clone());
-                        }
+                                            return fetch(event.request.clone());
+                                        }
 
-                        event.respondWith(req());
+                                        event.respondWith(req());
 
-                    })
-JS;
+                                    })
+                JS;
         }
 
         $this->_generateLockFile();
@@ -299,7 +348,7 @@ JS;
         if (!preg_match($this->sPregDocRoot, $sFullName))
             throw
                 new ServiceWorkerGeneratorException(
-                    "'" . $sFile . "' is outside of '" . $_SERVER['DOCUMENT_ROOT'] . "' ('$sFile' => '" . $sFullName . '\' => ' . $this->sPregDocRoot . ')',
+                    "'" . $sFile . "' is outside of '" . $_SERVER['DOCUMENT_ROOT'] . "' ('$sFile' => '" . $sFullName . "' => " . $this->sPregDocRoot . ')',
                     ServiceWorkerGeneratorException::FILE_OUTSIDE_DOCUMENT_ROOT
                 );
 
@@ -369,48 +418,47 @@ JS;
             "\n];\n\n";
     }
 
-//==============================================================================
-// Template strings
-//==============================================================================
-
-    /** @ignore */
+    // ==============================================================================
+    // Template strings
+    // ==============================================================================
+    /**
+     * @ignore
+     */
     private static $_swtpl_communications = <<<JS
-                    function postMessage(...args) {
-                        self.clients.matchAll().then(clients => {
-                            clients.forEach(client => {
-                                client.postMessage({...args});
+                            function postMessage(...args) {
+                                self.clients.matchAll().then(clients => {
+                                    clients.forEach(client => {
+                                        client.postMessage({...args});
+                                    })
+                                })
+                            }
+
+                            self.addEventListener("message", async (event) => {
+                                console.log("MainThread send:", event.data)
+
+                                if(event.data === "skip_waiting") {
+                                    console.log("Skip Waiting");
+                                    await self.skipWaiting();
+                                    postMessage("wait_finished");
+                                }
+
+                                postMessage("Thanks");
                             })
-                        })
-                    }
+        JS;
 
-                    self.addEventListener("message", async (event) => {
-                        console.log("MainThread send:", event.data)
-
-                        if(event.data === "skip_waiting") {
-                            console.log("Skip Waiting");
-                            await self.skipWaiting();
-                            postMessage("wait_finished");
-                        }
-
-                        postMessage("Thanks");
-                    })
-JS;
-
-    /** @ignore */
+    /**
+     * @ignore
+     */
     private static $_swtpl_cache = <<<JS
-                    for(const file of cacheFirst) {
-                        if(event.request.url.endsWith(file)) {
-                            postMessage("foundfile", file);
-                            const cache = await caches.open(cache_name);                                   
+                            for(const file of cacheFirst) {
+                                if(event.request.url.endsWith(file)) {
+                                    postMessage("foundfile", file);
+                                    const cache = await caches.open(cache_name);                                   
 
-                            return cache.match(event.request.clone());
-                        }
-                        postMessage("missed", file);
-                    }
+                                    return cache.match(event.request.clone());
+                                }
+                                postMessage("missed", file);
+                            }
 
-JS;
-
-
+        JS;
 }
-
-

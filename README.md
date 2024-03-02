@@ -48,6 +48,9 @@ Create a `sw.php` file.
         ->cachePrefix("PHPSWGen_Test") // Define what prefix the cache in the browser will receive
                                        // Needs to be set, if you have multiple ServiceWorkers in different scopes on the same server.
 
+        ->enableDirectoryIndexCache("/") // Adds a PATH directly to the precache cacheFirt list 
+                                         // The Path is called directly by the ServiceWorker
+
         ->fileCacheFirst("./index.html") // precache the index.html and deliver it CacheFirst
         ->dirCacheFirst("./vendor")  // precache everyting in the folder ./vendor and deliver it CacheFirst
 
