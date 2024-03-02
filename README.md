@@ -1,5 +1,8 @@
 # PHP - ServiceWorker Generator (very much WIP right now)
 
+## Requiresments.
+This requres PHP 8.x or higher.
+
 ## the Plan
 
 Generating ServiceWorker scripts is easy, if you are on Node. There you you have many tools to do that for you.
