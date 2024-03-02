@@ -187,60 +187,38 @@ class ServiceWorkerGenerator
         if (count($CacheCMDs)) {
             $sJSInstallCMDs = implode(";\n\t", $CacheCMDs);
 
-            echo <<<JS
+            $sJSCacheFirstFnc = $bCacheFirst
+                ? self::$_swtpl_cache
+                : "";
 
-                    function postMessage(...args) {
-                        self.clients.matchAll().then(clients => {
-                            clients.forEach(client => {
-                                client.postMessage({...args});
-                            })
-                        })
-                    }
-
-                    self.addEventListener("message", async (event) => {
-                        console.log("MainThread send:", event.data)
-
-                        if(event.data === "skip_waiting") {
-                            console.log("Skip Waiting");
-                            await self.skipWaiting();
-                            postMessage("wait_finished");
-                        }
-
-                        postMessage("Thanks");
-                    })
+            echo 
+                self::$_swtpl_communications, 
+                <<<JS
 
                     self.addEventListener("install", (event) => {
-
                         const inst = async () => {
                             const cache = await caches.open(cache_name);
 
                             {$sJSInstallCMDs}
+
                         }
 
                         event.waitUntil(inst());
                     });
 
                     self.addEventListener("fetch", (event) => {
+
                         const req = async () => {
 
-                            for(const file of cacheFirst) {
-                                if(event.request.url.endsWith(file)) {
-                                    postMessage("foundfile", file);
-                                    const cache = await caches.open(cache_name);                                   
-
-                                    return cache.match(event.request.clone());
-                                }
-                                postMessage("missed", file);
-                            }
+                            {$sJSCacheFirstFnc}
 
                             return fetch(event.request.clone());
-
                         }
 
                         event.respondWith(req());
 
                     })
-                JS;
+JS;
         }
 
         $this->_generateLockFile();
@@ -390,4 +368,49 @@ class ServiceWorkerGenerator
             implode(",\n\t", array_map(fn($e) => '"' . $e . '"', $arr)),
             "\n];\n\n";
     }
+
+//==============================================================================
+// Template strings
+//==============================================================================
+
+    /** @ignore */
+    private static $_swtpl_communications = <<<JS
+                    function postMessage(...args) {
+                        self.clients.matchAll().then(clients => {
+                            clients.forEach(client => {
+                                client.postMessage({...args});
+                            })
+                        })
+                    }
+
+                    self.addEventListener("message", async (event) => {
+                        console.log("MainThread send:", event.data)
+
+                        if(event.data === "skip_waiting") {
+                            console.log("Skip Waiting");
+                            await self.skipWaiting();
+                            postMessage("wait_finished");
+                        }
+
+                        postMessage("Thanks");
+                    })
+JS;
+
+    /** @ignore */
+    private static $_swtpl_cache = <<<JS
+                    for(const file of cacheFirst) {
+                        if(event.request.url.endsWith(file)) {
+                            postMessage("foundfile", file);
+                            const cache = await caches.open(cache_name);                                   
+
+                            return cache.match(event.request.clone());
+                        }
+                        postMessage("missed", file);
+                    }
+
+JS;
+
+
 }
+
+
