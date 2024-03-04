@@ -65,6 +65,12 @@ class ServiceWorkerGenerator
     private $bChanged = false;
 
     /**
+     * @var {string[]} A list of patterns to be used for offline fallback
+     * [ pattern => url ]
+     */
+    private $aFallbackPatterns = [];
+
+    /**
      * The Constructor
      * @param  {string} $sLockFileName - Path to the file containing meta data for already generated Service-Workers
      */
@@ -95,9 +101,11 @@ class ServiceWorkerGenerator
             if (isset($sCacheName))
                 $this->sCacheName = '' . $sCacheName;
 
-            // DONE: restore MD5 List from that
             if (isset($aFiles))
                 $this->aFileMD5 = $aFiles;
+
+            if (isset($aPatternFallback))
+                $this->aFallbackPatterns = $aPatternFallback;
         } else {
             $this->iTimeStamp = time();
             $this->bChanged = true;
@@ -208,6 +216,25 @@ class ServiceWorkerGenerator
     }
 
     /**
+     * Defines a Fallback file, which is used, should the requested url match the given Patter and
+     * not load propperly on the Client
+     *
+     * @param  $sPattern  - a JavaScript Regular expression, to be checked against the requested URL
+     * @param  $sFilePath - the url of the file inside the cache (this will be precached)
+     *
+     * @example
+     * (new rogoss\ServiceWorkerGenerator())
+     *  ->patternOfflineFallback('/\.svg$/', '/img/no_network.svg');
+     *
+     * @return $this
+     */
+    public function patternFallback($sPattern, $sFilePath)
+    {
+        $this->aFallbackPatterns[$sPattern] = $this->_addFile($this->aCacheFirst, $sFilePath);
+        return $this;
+    }
+
+    /**
      * Generates the ServiceWorkers content and sends it to the output and ends the script execution.
      * @return void
      */
@@ -222,9 +249,10 @@ class ServiceWorkerGenerator
 
         $bCacheFirst = count($this->aCacheFirst) > 0;
         $bCacheClean = count($this->aCacheCleanup) > 0;
+        $bFallbackPatterns = count($this->aFallbackPatterns) > 0;
 
         echo '/* ts:', $this->iTimeStamp, " */\n",
-            "\n const cache_name='", $this->sCacheName, "';";
+            "\nconst cache_name='", $this->sCacheName, "';\n\n";
 
         $CacheCMDs = [];
 
@@ -237,6 +265,12 @@ class ServiceWorkerGenerator
             $CacheCMDs[] = ' await cache.addAll(cacheFirst) ';
         }
 
+        if ($bFallbackPatterns) {
+            $this->_printJSStrArrayKeyed('fallbackPatterns', $this->aFallbackPatterns);
+            $sFallbackPatternFnc = self::$_swtpl_pattern_fallback;
+        } else
+            $sFallbackPatternFnc = self::$_swtpl_no_pattern_fallback;
+
         if (count($CacheCMDs)) {
             $sJSInstallCMDs = implode(";\n\t", $CacheCMDs);
 
@@ -247,29 +281,45 @@ class ServiceWorkerGenerator
             echo self::$_swtpl_communications,
                 <<<JS
 
-                    self.addEventListener("install", (event) => {
-                        const inst = async () => {
-                            const cache = await caches.open(cache_name);
+                self.addEventListener("install", (event) => {
+                    const inst = async () => {
+                        const cache = await caches.open(cache_name);
 
-                            {$sJSInstallCMDs}
+                        {$sJSInstallCMDs}
 
-                        }
+                    }
 
-                        event.waitUntil(inst());
-                    });
+                    event.waitUntil(inst());
+                });
 
-                    self.addEventListener("fetch", (event) => {
+                self.addEventListener("fetch", (event) => {
 
-                        const req = async () => {
+                    function patternFallback(request, cache) {
+                    {$sFallbackPatternFnc}
+                    }
 
-                            {$sJSCacheFirstFnc}
+                    function fetchAndCache(request, cache) {
+                        postMessage(`'\${request.url}' is not part of cache, but should be. => Fetching now ... `);
+                        return fetch(request).then( response => {
+                            if(response) {
+                                cache.put(request, response.clone());
+                                return response;
+                            } else {
+                                return patternFallback(request, cache); 
+                            }
+                        })
+                    }
 
-                            return fetch(event.request.clone());
-                        }
+                    async function req() {
 
-                        event.respondWith(req());
+                        {$sJSCacheFirstFnc}
 
-                    })
+                        return fetch(event.request.clone());
+                    }
+
+                    event.respondWith(req());
+
+                })
                 JS;
         }
 
@@ -285,6 +335,7 @@ class ServiceWorkerGenerator
     {
         $sCacheCleanup = var_export($this->aCacheCleanup, true);
         $sMD5Files = var_export($this->aFileMD5, true);
+        $sPatternFallback = var_export($this->aFallbackPatterns, true);
 
         file_put_contents(
             $this->sLockFileName,
@@ -297,6 +348,8 @@ class ServiceWorkerGenerator
                 \$aCacheClean = $sCacheCleanup;
 
                 \$aFiles = $sMD5Files;
+
+                \$aPatternFallback = $sPatternFallback;
 
             PHP
         );
@@ -382,7 +435,10 @@ class ServiceWorkerGenerator
 
         $this->aFileMD5[$sFilePath] = $sFileMD5;
 
-        $aList[] = $this->_trimPath($sFilePath);
+        $sURLFile = $this->_trimPath($sFilePath);
+        $aList[] = $sURLFile;
+
+        return $sURLFile;
     }
 
     /**
@@ -421,6 +477,19 @@ class ServiceWorkerGenerator
             "\n];\n\n";
     }
 
+    /**
+     * @ignore
+     */
+    private function _printJSStrArrayKeyed($sJSArrName, $arr)
+    {
+        echo "\nconst {$sJSArrName} = {\n\t";
+
+        foreach ($arr as $key => $value)
+            echo '"' . $key . '" : "' . $value . "\",\n";
+
+        echo "};\n\n";
+    }
+
     // ==============================================================================
     // Template strings
     // ==============================================================================
@@ -429,25 +498,25 @@ class ServiceWorkerGenerator
      * @ignore
      */
     private static $_swtpl_communications = <<<JS
-                    function postMessage(...args) {
-                        self.clients.matchAll().then(clients => {
-                            clients.forEach(client => {
-                                client.postMessage({...args});
-                            })
-                        })
-                    }
+        function postMessage(...args) {
+            self.clients.matchAll().then(clients => {
+                clients.forEach(client => {
+                    client.postMessage({...args});
+                })
+            })
+        }
 
-                    self.addEventListener("message", async (event) => {
-                        console.log("MainThread send:", event.data)
+        self.addEventListener("message", async (event) => {
+            console.log("MainThread send:", event.data)
 
-                        if(event.data === "skip_waiting") {
-                            console.log("Skip Waiting");
-                            await self.skipWaiting();
-                            postMessage("wait_finished");
-                        }
+            if(event.data === "skip_waiting") {
+                console.log("Skip Waiting");
+                await self.skipWaiting();
+                postMessage("wait_finished");
+            }
 
-                        postMessage("Thanks");
-                    })
+            postMessage("Thanks");
+        })
         JS;
 
     /**
@@ -455,25 +524,32 @@ class ServiceWorkerGenerator
      */
     private static $_swtpl_cache = <<<JS
 
-                    function fetchAndCache(request, cache) {
-                        postMessage(`'\${request.url}' is not part of cache, but should be. => Fetching now ... `);
-                        return fetch(request).then( response => {
-                            cache.put(request, response.clone());
-                            return response;
-                        })
+                for(const file of cacheFirst) {
+                    if(event.request.url.endsWith(file)) {
+                        postMessage("foundfile", file);
+                        const cache = await caches.open(cache_name);
+
+                        return cache.match(event.request.clone())
+                            .then( (res) => res || fetchAndCache(event.request.clone(), cache))
                     }
 
-                    for(const file of cacheFirst) {
-                        if(event.request.url.endsWith(file)) {
-                            postMessage("foundfile", file);
-                            const cache = await caches.open(cache_name);
+                    postMessage("missed", file);
+                }
 
-                            return cache.match(event.request.clone())
-                                .then( (res) => res || fetchAndCache(event.request.clone(), cache))
-                        }
+        JS;
 
-                        postMessage("missed", file);
+    private static $_swtpl_pattern_fallback = <<<JS
+
+                for(const [pattern, file] of Object.entries(fallbackPatterns)) {
+                    //TODO: Test this (continue here)
+                    if(pattern.test(request.url)) {
+                        return cache.match(file)
                     }
+                }
+        JS;
 
+    private static $_swtpl_no_pattern_fallback = <<<JS
+
+                throw new Error('could not handle request ' + request.url);
         JS;
 }
