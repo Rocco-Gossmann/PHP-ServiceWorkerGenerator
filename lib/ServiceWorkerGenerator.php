@@ -7,7 +7,6 @@ namespace rogoss;
  * @license MIT
  */
 
-
 /**
  * @class Thrown by ServiceWorkerGenerator, in case anything goes wrong
  */
@@ -138,39 +137,43 @@ class ServiceWorkerGenerator
      */
     public function enableDirectoryIndexCache($sPath)
     {
-        //DONE: Check if path ends with '/'
+        // DONE: Check if path ends with '/'
         if (!preg_match('/\/$/', $sPath))
             throw new ServiceWorkerGeneratorException(
                 "Directory index path must end with '/'",
                 ServiceWorkerGeneratorException::INVALID_DIRECTORYINDEX_PATH
             );
 
-        //DONE: Make sure path does not call any hidden directories
+        // DONE: Make sure path does not call any hidden directories
         if (preg_match('/\/\.[^.]/', $sPath))
             throw new ServiceWorkerGeneratorException(
                 "path must not contain a '/.'",
                 ServiceWorkerGeneratorException::INVALID_DIRECTORYINDEX_PATH
             );
 
-        //DONE: Resolve all .. in the path without the path needing to physically exist on the physically exist on the Server.
+        // DONE: Resolve all .. in the path without the path needing to physically exist on the physically exist on the Server.
         $aParts = [];
         foreach (explode('/', $sPath) as $sPart) {
-            if(empty($sPart) || $sPart === ".") continue;
-
-            elseif($sPart === "..") {
-                if(count($aParts)) array_pop($aParts);
-                else throw new ServiceWorkerGeneratorException(
-                    "path must not leave {$_SERVER['DOCUMENT_ROOT']}" ,
-                    ServiceWorkerGeneratorException::INVALID_DIRECTORYINDEX_PATH
-                );
+            if (empty($sPart) || $sPart === '.')
+                continue;
+            elseif ($sPart === '..') {
+                if (count($aParts))
+                    array_pop($aParts);
+                else
+                    throw new ServiceWorkerGeneratorException(
+                        "path must not leave {$_SERVER['DOCUMENT_ROOT']}",
+                        ServiceWorkerGeneratorException::INVALID_DIRECTORYINDEX_PATH
+                    );
             }
 
-            else $aParts[] = $sPart;
+            else
+                $aParts[] = $sPart;
         }
 
         $sPath = implode('/', $aParts);
 
-        if(empty($sPath)) $sPath = '/';
+        if (empty($sPath))
+            $sPath = '/';
 
         $this->aCacheFirst[$sPath] = $sPath;
         return $this;
@@ -244,29 +247,29 @@ class ServiceWorkerGenerator
             echo self::$_swtpl_communications,
                 <<<JS
 
-                                    self.addEventListener("install", (event) => {
-                                        const inst = async () => {
-                                            const cache = await caches.open(cache_name);
+                    self.addEventListener("install", (event) => {
+                        const inst = async () => {
+                            const cache = await caches.open(cache_name);
 
-                                            {$sJSInstallCMDs}
+                            {$sJSInstallCMDs}
 
-                                        }
+                        }
 
-                                        event.waitUntil(inst());
-                                    });
+                        event.waitUntil(inst());
+                    });
 
-                                    self.addEventListener("fetch", (event) => {
+                    self.addEventListener("fetch", (event) => {
 
-                                        const req = async () => {
+                        const req = async () => {
 
-                                            {$sJSCacheFirstFnc}
+                            {$sJSCacheFirstFnc}
 
-                                            return fetch(event.request.clone());
-                                        }
+                            return fetch(event.request.clone());
+                        }
 
-                                        event.respondWith(req());
+                        event.respondWith(req());
 
-                                    })
+                    })
                 JS;
         }
 
@@ -421,44 +424,56 @@ class ServiceWorkerGenerator
     // ==============================================================================
     // Template strings
     // ==============================================================================
+
     /**
      * @ignore
      */
     private static $_swtpl_communications = <<<JS
-                            function postMessage(...args) {
-                                self.clients.matchAll().then(clients => {
-                                    clients.forEach(client => {
-                                        client.postMessage({...args});
-                                    })
-                                })
-                            }
-
-                            self.addEventListener("message", async (event) => {
-                                console.log("MainThread send:", event.data)
-
-                                if(event.data === "skip_waiting") {
-                                    console.log("Skip Waiting");
-                                    await self.skipWaiting();
-                                    postMessage("wait_finished");
-                                }
-
-                                postMessage("Thanks");
+                    function postMessage(...args) {
+                        self.clients.matchAll().then(clients => {
+                            clients.forEach(client => {
+                                client.postMessage({...args});
                             })
+                        })
+                    }
+
+                    self.addEventListener("message", async (event) => {
+                        console.log("MainThread send:", event.data)
+
+                        if(event.data === "skip_waiting") {
+                            console.log("Skip Waiting");
+                            await self.skipWaiting();
+                            postMessage("wait_finished");
+                        }
+
+                        postMessage("Thanks");
+                    })
         JS;
 
     /**
      * @ignore
      */
     private static $_swtpl_cache = <<<JS
-                            for(const file of cacheFirst) {
-                                if(event.request.url.endsWith(file)) {
-                                    postMessage("foundfile", file);
-                                    const cache = await caches.open(cache_name);                                   
 
-                                    return cache.match(event.request.clone());
-                                }
-                                postMessage("missed", file);
-                            }
+                    function fetchAndCache(request, cache) {
+                        postMessage(`'\${request.url}' is not part of cache, but should be. => Fetching now ... `);
+                        return fetch(request).then( response => {
+                            cache.put(request, response.clone());
+                            return response;
+                        })
+                    }
+
+                    for(const file of cacheFirst) {
+                        if(event.request.url.endsWith(file)) {
+                            postMessage("foundfile", file);
+                            const cache = await caches.open(cache_name);
+
+                            return cache.match(event.request.clone())
+                                .then( (res) => res || fetchAndCache(event.request.clone(), cache))
+                        }
+
+                        postMessage("missed", file);
+                    }
 
         JS;
 }
