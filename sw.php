@@ -13,7 +13,7 @@
 
         ->dirCacheFirst("./vendor")
 
-        ->patternFallback("/\.svg$/", "./img/PhWifiSlashBold.svg")
+        ->patternFallback("\.svg$", "./img/PhWifiSlashBold.svg")
 
         ->printAndExit()
 

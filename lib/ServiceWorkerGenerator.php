@@ -294,19 +294,29 @@ class ServiceWorkerGenerator
 
                 self.addEventListener("fetch", (event) => {
 
-                    function patternFallback(request, cache) {
+                    async function patternFallback(request, response, cache) {
                     {$sFallbackPatternFnc}
                     }
 
                     function fetchAndCache(request, cache) {
+
                         postMessage(`'\${request.url}' is not part of cache, but should be. => Fetching now ... `);
+
                         return fetch(request).then( response => {
+
                             if(response) {
-                                cache.put(request, response.clone());
-                                return response;
-                            } else {
-                                return patternFallback(request, cache); 
-                            }
+                                const statuscode = response.status.toString();
+
+                                if(statuscode.startsWith('2')) {
+                                    if(statuscode==='200') 
+                                        cache.put(request, response.clone());
+
+                                    return response;
+
+                                } else return patternFallback(request, response, cache); 
+
+                            } else return patternFallback(request, response, cache); 
+
                         })
                     }
 
@@ -314,7 +324,9 @@ class ServiceWorkerGenerator
 
                         {$sJSCacheFirstFnc}
 
-                        return fetch(event.request.clone());
+                        return fetch(event.request.clone()).then( response => {
+                            return patternFallback(event.request, response)
+                        }).catch(() => patternFallback(event.request));
                     }
 
                     event.respondWith(req());
@@ -510,7 +522,7 @@ class ServiceWorkerGenerator
             console.log("MainThread send:", event.data)
 
             if(event.data === "skip_waiting") {
-                console.log("Skip Waiting");
+                console.log("was tasked to skip waiting ...");
                 await self.skipWaiting();
                 postMessage("wait_finished");
             }
@@ -526,30 +538,37 @@ class ServiceWorkerGenerator
 
                 for(const file of cacheFirst) {
                     if(event.request.url.endsWith(file)) {
-                        postMessage("foundfile", file);
                         const cache = await caches.open(cache_name);
 
                         return cache.match(event.request.clone())
                             .then( (res) => res || fetchAndCache(event.request.clone(), cache))
                     }
-
-                    postMessage("missed", file);
                 }
 
         JS;
 
     private static $_swtpl_pattern_fallback = <<<JS
 
+                if(response && response.status.toString().match(/^(2|3)\d\d$/)) 
+                    return response;
+
+                let regExp = undefined;
                 for(const [pattern, file] of Object.entries(fallbackPatterns)) {
-                    //TODO: Test this (continue here)
-                    if(pattern.test(request.url)) {
-                        return cache.match(file)
+                    regExp = new RegExp(pattern, "i");
+
+                    if(regExp.test(request.url)) {
+                        if(!cache)
+                            cache = await caches.open(cache_name);
+                        const mtch = await cache.match(file);
+                        return mtch.clone() 
                     }
                 }
+
+                return response;
         JS;
 
     private static $_swtpl_no_pattern_fallback = <<<JS
-
-                throw new Error('could not handle request ' + request.url);
+                
+                return response;
         JS;
 }
