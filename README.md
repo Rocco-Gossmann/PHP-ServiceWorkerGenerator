@@ -52,7 +52,11 @@ Create a `sw.php` file.
                                          // The Path is called directly by the ServiceWorker
 
         ->fileCacheFirst("./index.html") // precache the index.html and deliver it CacheFirst
-        ->dirCacheFirst("./vendor")  // precache everyting in the folder ./vendor and deliver it CacheFirst
+        ->dirCacheFirst("./vendor")      // precache every file in the folder ./vendor and deliver it CacheFirst
+
+        ->patternFallback("\.svg$", "./img/PhWifiSlashBold.svg") // All requests that end in .svg (or .SVG, it is not case sensitive)
+                                                                 // that are not answered with 2xx or 3xx by the Server
+                                                                 // Will be answered by ServiceWorker with the "./img/PhWifiSlashBold.svg"
 
         // TODO: add the other functions ... 
 
