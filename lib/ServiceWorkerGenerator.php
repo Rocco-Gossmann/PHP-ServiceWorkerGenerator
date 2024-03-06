@@ -45,6 +45,11 @@ class ServiceWorkerGenerator
     private $aCacheCleanup = [];
 
     /**
+     * @var {string[]} a list of URLs to be removed from cache after the Service-Worker has been activated
+     */
+    private $aFileCleanup = [];
+
+    /**
      * @var {string[]} List of files handled by the Service-Worker [ md5(content) => filename ]
      */
     private $aFileMD5 = [];
@@ -104,8 +109,6 @@ class ServiceWorkerGenerator
             if (isset($aFiles))
                 $this->aFileMD5 = $aFiles;
 
-            if (isset($aPatternFallback))
-                $this->aFallbackPatterns = $aPatternFallback;
         } else {
             $this->iTimeStamp = time();
             $this->bChanged = true;
@@ -249,16 +252,21 @@ class ServiceWorkerGenerator
 
         $bCacheFirst = count($this->aCacheFirst) > 0;
         $bCacheClean = count($this->aCacheCleanup) > 0;
+        $bFileCleanup = count($this->aFileCleanup) > 0;
         $bFallbackPatterns = count($this->aFallbackPatterns) > 0;
 
         echo '/* ts:', $this->iTimeStamp, " */\n",
             "\nconst cache_name='", $this->sCacheName, "';\n\n";
 
         $CacheCMDs = [];
+        $ActivateCMDs = [];
 
         if ($bCacheClean)
             $this->_printJSStrArray('cacheCleanup', $this->aCacheCleanup);
-        // TODO: Make ServiceWorker do the Cleanup thing
+
+        if ($bFileCleanup) {
+            $this->_printJSStrArray('fileCleanup', $this->aFileCleanup);
+        }
 
         if ($bCacheFirst) {
             $this->_printJSStrArray('cacheFirst', $this->aCacheFirst);
@@ -268,11 +276,11 @@ class ServiceWorkerGenerator
         if ($bFallbackPatterns) {
             $this->_printJSStrArrayKeyed('fallbackPatterns', $this->aFallbackPatterns);
             $sFallbackPatternFnc = self::$_swtpl_pattern_fallback;
-        } else
-            $sFallbackPatternFnc = self::$_swtpl_no_pattern_fallback;
+        } else $sFallbackPatternFnc = "";
 
         if (count($CacheCMDs)) {
             $sJSInstallCMDs = implode(";\n\t", $CacheCMDs);
+            $sJSActivateCMDS = implode(";\n\t", $ActivateCMDs);
 
             $sJSCacheFirstFnc = $bCacheFirst
                 ? self::$_swtpl_cache
@@ -287,20 +295,29 @@ class ServiceWorkerGenerator
 
                         {$sJSInstallCMDs}
 
+                        postEvent("install_done");
                     }
 
                     event.waitUntil(inst());
                 });
 
+                self.addEventListener("activate", (event) => {
+                    // TODO: Make ServiceWorker do the Cleanup thing
+                    {$sJSActivateCMDS}
+                    postEvent("activation_done");
+                })
+
                 self.addEventListener("fetch", (event) => {
 
                     async function patternFallback(request, response, cache) {
-                    {$sFallbackPatternFnc}
+                        {$sFallbackPatternFnc}
+
+                        return response;
                     }
 
                     function fetchAndCache(request, cache) {
 
-                        postMessage(`'\${request.url}' is not part of cache, but should be. => Fetching now ... `);
+                        postMsg(`'\${request.url}' is not part of cache, but should be. => Fetching now ... `);
 
                         return fetch(request).then( response => {
 
@@ -347,7 +364,6 @@ class ServiceWorkerGenerator
     {
         $sCacheCleanup = var_export($this->aCacheCleanup, true);
         $sMD5Files = var_export($this->aFileMD5, true);
-        $sPatternFallback = var_export($this->aFallbackPatterns, true);
 
         file_put_contents(
             $this->sLockFileName,
@@ -360,8 +376,6 @@ class ServiceWorkerGenerator
                 \$aCacheClean = $sCacheCleanup;
 
                 \$aFiles = $sMD5Files;
-
-                \$aPatternFallback = $sPatternFallback;
 
             PHP
         );
@@ -510,24 +524,31 @@ class ServiceWorkerGenerator
      * @ignore
      */
     private static $_swtpl_communications = <<<JS
-        function postMessage(...args) {
-            self.clients.matchAll().then(clients => {
-                clients.forEach(client => {
-                    client.postMessage({...args});
-                })
-            })
+    
+        const clientList = new Map();
+
+        function postToClient(client, event, ...args) {
+            client.postMessage(JSON.stringify({ type: event, data: args }))
         }
 
+
+        function postEvent(event, ...args) {
+            //console.log(clients, clientList);
+            self.clients.matchAll().then(clients => {
+                clients.forEach(client => postToClient(client, event, ...args) )
+            })
+
+            clientList.forEach(client => postToClient(client, event, ...args) )
+        }
+
+        function postMsg(...args) { postEvent("msg", ...args) }
+
         self.addEventListener("message", async (event) => {
-            console.log("MainThread send:", event.data)
-
+            console.log("Message from",  event.source.id, ": ", event.data);
+            clientList.set(event.source.id, event.source);
             if(event.data === "skip_waiting") {
-                console.log("was tasked to skip waiting ...");
                 await self.skipWaiting();
-                postMessage("wait_finished");
             }
-
-            postMessage("Thanks");
         })
         JS;
 
@@ -544,7 +565,6 @@ class ServiceWorkerGenerator
                             .then( (res) => res || fetchAndCache(event.request.clone(), cache))
                     }
                 }
-
         JS;
 
     private static $_swtpl_pattern_fallback = <<<JS
@@ -567,8 +587,4 @@ class ServiceWorkerGenerator
                 return response;
         JS;
 
-    private static $_swtpl_no_pattern_fallback = <<<JS
-                
-                return response;
-        JS;
 }
