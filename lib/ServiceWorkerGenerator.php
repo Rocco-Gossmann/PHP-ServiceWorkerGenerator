@@ -47,6 +47,17 @@ class ServiceWorkerGenerator
     /** @var {string[]} keeps track of what files have been registered this run (required to generate aFileCleanup) */
     private $aRegisterdFiles = [];
 
+    /** 
+     * @var {string[]} keeps track of what pathes have been added via `enableDirectoryIndexCache` over the lifetime of the SW
+     * @see self::enableDirectoryIndexCache
+     */
+    private $aRegisterdDirectoryIndexes = [];
+    /** 
+     * @var {string[]} keeps track of what pathes have been added via `enableDirectoryIndexCache` in this run 
+     * @see self::enableDirectoryIndexCache
+     */
+    private $aUsedDirectoryIndexes = [];
+
     /** @var {string[]} List of files handled by the Service-Worker [ md5(content) => filename ] */
     private $aFileMD5 = [];
 
@@ -98,6 +109,9 @@ class ServiceWorkerGenerator
 
             if (isset($aFiles))
                 $this->aFileMD5 = $aFiles;
+
+            if (isset($aDirIndexes))
+                $this->aRegisterdDirectoryIndexes = $aDirIndexes;
 
         } else {
             $this->iTimeStamp = time();
@@ -181,6 +195,8 @@ class ServiceWorkerGenerator
             $sPath = '/';
 
         $this->aCacheFirst[$sPath] = $sPath;
+        $this->aRegisterdDirectoryIndexes[$sPath] = $sPath;
+        $this->aUsedDirectoryIndexes[$sPath] = $sPath;
         return $this;
     }
 
@@ -249,6 +265,12 @@ class ServiceWorkerGenerator
             if(!empty($this->aRegisterdFiles[$sFilePath])) continue;
             $sTrimmedPath = $this->_trimPath($sFilePath);
             $this->aFileCleanup[$sTrimmedPath] = $sTrimmedPath;
+        } 
+
+        // check directory indexes to cleanup 
+        foreach($this->aRegisterdDirectoryIndexes as $sFilePath => $_) {
+            if(!empty($this->aUsedDirectoryIndexes[$sFilePath])) continue;
+            $this->aFileCleanup[$sFilePath] = $sFilePath;
         } 
 
 
@@ -405,6 +427,7 @@ class ServiceWorkerGenerator
     {
         $sCacheCleanup = var_export($this->aCacheCleanup, true);
         $sMD5Files = var_export($this->aFileMD5, true);
+        $sDirectoryIndexes = var_export($this->aRegisterdDirectoryIndexes, true);
 
         file_put_contents(
             $this->sLockFileName,
@@ -417,6 +440,8 @@ class ServiceWorkerGenerator
                 \$aCacheClean = $sCacheCleanup;
 
                 \$aFiles = $sMD5Files;
+
+                \$aDirIndexes = $sDirectoryIndexes;
 
             PHP
         );
@@ -578,9 +603,7 @@ class ServiceWorkerGenerator
         })
         JS;
 
-    /**
-     * @ignore
-     */
+    /** @ignore */
     private static $_swtpl_cache = <<<JS
 
                 for(const file of cacheFirst) {
@@ -593,6 +616,7 @@ class ServiceWorkerGenerator
                 }
         JS;
 
+    /** @ignore */
     private static $_swtpl_pattern_fallback = <<<JS
 
                 if(response && response.status.toString().match(/^(2|3)\d\d$/)) 

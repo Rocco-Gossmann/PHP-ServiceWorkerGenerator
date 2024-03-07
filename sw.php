@@ -6,7 +6,7 @@
 
         ->cacheName("PHPSW_Test")
 
-#        ->enableDirectoryIndexCache("/")
+        ->enableDirectoryIndexCache("/")
 
         ->fileCacheFirst("./index.html")
         ->fileCacheFirst("./js/sw.js")

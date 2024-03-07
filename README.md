@@ -25,31 +25,31 @@ Should anything regarding the registered files change. the ServiceWorker will up
 Here is an overview of when such a ServiceWorker-Update is triggered.
 
 | function                    | if added                                            | if deleted                                      | on content change                                     |
-| -----------------           | -------------------------------------------         | ----------------------------------------------- | ----------------------------------------------------- |
+| --------------------------- | --------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------- |
 | `fileCacheFirst`            | ✅                                                  | ✅                                              | ✅                                                    |
 | `patternFallback`           | ✅                                                  | ✅                                              | if content of the fallback file changes               |
-| `enableDirectoryIndexCache` | ✅                                                  | ❔<br> <small>(TODO: Implement)</small>         | ❌                                                    |
+| `enableDirectoryIndexCache` | ✅                                                  | ✅                                              | ❌                                                    |
 | `cacheName`                 | always exists (has a default State, if not defined) | delete not possible                             | ✅                                                    |
 | `dirCacheFirst`             | if any file is added to the given directory         | if any file is removed from the given directory | if any of the directorys files binary content changes |
 
 ## Requirements to fullfill
 
-- Standalone (No external dependencies at all)
+-   Standalone (No external dependencies at all)
 
-- Needs to be able to generate a valid service worker script to:
-    - ✅ precache static files in the client browser and deliver them in a "cacheFirst" approach.
-    - ✅ store files in an "cacheFirst" fashion, and use the cache as a fallback for Offline / error cases.
-    - ⬜️ store files in an "onDemand" fashion, and deliver them cacheFirst . (means cache them only once they have been requested)
-    - ⬜️ store files in an "onDemand" fashion, and use the cache as a fallback for Offline / error cases.
+-   Needs to be able to generate a valid service worker script to:
 
--  Maintain a list of files, currently handled by the Service-Worker
+    -   ✅ precache static files in the client browser and deliver them in a "cacheFirst" approach.
+    -   ✅ store files in an "cacheFirst" fashion, and use the cache as a fallback for Offline / error cases.
+    -   ⬜️ store files in an "onDemand" fashion, and deliver them cacheFirst . (means cache them only once they have been requested)
+    -   ⬜️ store files in an "onDemand" fashion, and use the cache as a fallback for Offline / error cases.
 
--  Only recreate the Service-Worker if things actually change in the project.
+-   Maintain a list of files, currently handled by the Service-Worker
+
+-   Only recreate the Service-Worker if things actually change in the project.
 
 ## Ideas for the Future
 
 Add more functionality, like "Push Notification" handling.
-
 
 # Usage:
 
@@ -84,7 +84,5 @@ Create a `sw.php` file.
         ->printAndExit() // Finish the generation and end the PHP-Script
     ;
 ```
+
 All Setter - Functions return `$this`, which means, you can chain all setters as shown above.
-
-
-
