@@ -24,15 +24,17 @@ class ServiceWorkerGeneratorException extends \Exception
  */
 class ServiceWorkerGenerator
 {
+    const DEFAULT_CACHENAME = '__PhpSWGen__';
     /**
      * @var {string} Helper to validate filepaths
      */
     private $sPregDocRoot = '';
 
-    /**
-     * @var {string} The name of the cache, that the ServiceWorker will store its files in
-     */
+    /** @var {string} The name of the cache, that the ServiceWorker will store its files in */
     private $sCacheName = '__PhpSWGen__';
+
+    /** @var {boolean} Keeps track of if the CacheName was set in this run (if not reset the cachename to the default) */
+    private $bCacheNameSet = false;
 
     /**
      * @var {string[]} Filenames to be handled cache first
@@ -112,6 +114,7 @@ class ServiceWorkerGenerator
         } else {
             $this->iTimeStamp = time();
             $this->bChanged = true;
+
         }
     }
 
@@ -122,6 +125,8 @@ class ServiceWorkerGenerator
      */
     public function cachePrefix($sCacheName)
     {
+        $this->bCacheNameSet = true;
+
         if ($sCacheName === $this->sCacheName)
             return $this;
 
@@ -135,6 +140,7 @@ class ServiceWorkerGenerator
             );
 
         $this->aCacheCleanup[$sOldCacheName] = $sOldCacheName;
+        unset($this->aCacheCleanup[$this->sCacheName]);
 
         $this->bChanged = true;
 
@@ -246,6 +252,10 @@ class ServiceWorkerGenerator
         ob_end_clean();
         header('content-type: application/javascript');
 
+        // Reset the cache name, if it was not set this ru
+        if(!$this->bCacheNameSet) 
+            $this->cachePrefix(self::DEFAULT_CACHENAME);
+
         if ($this->bChanged) {
             $this->iTimeStamp = time();
         }
@@ -261,17 +271,34 @@ class ServiceWorkerGenerator
         $CacheCMDs = [];
         $ActivateCMDs = [];
 
-        if ($bCacheClean)
-            $this->_printJSStrArray('cacheCleanup', $this->aCacheCleanup);
-
-        if ($bFileCleanup) {
-            $this->_printJSStrArray('fileCleanup', $this->aFileCleanup);
-        }
 
         if ($bCacheFirst) {
             $this->_printJSStrArray('cacheFirst', $this->aCacheFirst);
             $CacheCMDs[] = ' await cache.addAll(cacheFirst) ';
         }
+
+//=============================================================================
+// Do the Cleanup thing
+//=============================================================================
+        
+        if ($bCacheClean)
+            $this->_printJSStrArray('cacheCleanup', $this->aCacheCleanup);
+
+        if ($bFileCleanup) 
+            $this->_printJSStrArray('fileCleanup', $this->aFileCleanup);
+
+        if($bFileCleanup || $bCacheClean) {
+            if($bCacheClean) $CacheCMDs[] = <<<JS
+                await (async () => {
+                    for (const key of (await caches.keys())) {
+                        if (cacheCleanup.indexOf(key) !== -1) {
+                            await caches.delete(key);
+                        }
+                    } 
+                })() 
+            JS;
+        } 
+
 
         if ($bFallbackPatterns) {
             $this->_printJSStrArrayKeyed('fallbackPatterns', $this->aFallbackPatterns);
@@ -580,7 +607,8 @@ class ServiceWorkerGenerator
                         if(!cache)
                             cache = await caches.open(cache_name);
                         const mtch = await cache.match(file);
-                        return mtch.clone() 
+                        if(mtch) return mtch.clone() 
+                        else return response;
                     }
                 }
 
