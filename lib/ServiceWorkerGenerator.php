@@ -25,9 +25,8 @@ class ServiceWorkerGeneratorException extends \Exception
 class ServiceWorkerGenerator
 {
     const DEFAULT_CACHENAME = '__PhpSWGen__';
-    /**
-     * @var {string} Helper to validate filepaths
-     */
+
+    /** @var {string} Helper to validate filepaths */
     private $sPregDocRoot = '';
 
     /** @var {string} The name of the cache, that the ServiceWorker will store its files in */
@@ -36,39 +35,28 @@ class ServiceWorkerGenerator
     /** @var {boolean} Keeps track of if the CacheName was set in this run (if not reset the cachename to the default) */
     private $bCacheNameSet = false;
 
-    /**
-     * @var {string[]} Filenames to be handled cache first
-     */
+    /** @var {string[]} Filenames to be handled cache first */
     private $aCacheFirst = [];
 
-    /**
-     * @var {string[]} A List of cache names, that the Service-Worker is supposed to clean up
-     */
+    /** @var {string[]} A List of cache names, that the Service-Worker is supposed to clean up */
     private $aCacheCleanup = [];
 
-    /**
-     * @var {string[]} a list of URLs to be removed from cache after the Service-Worker has been activated
-     */
+    /** @var {string[]} a list of URLs to be removed from cache after the Service-Worker has been activated */
     private $aFileCleanup = [];
 
-    /**
-     * @var {string[]} List of files handled by the Service-Worker [ md5(content) => filename ]
-     */
+    /** @var {string[]} keeps track of what files have been registered this run (required to generate aFileCleanup) */
+    private $aRegisterdFiles = [];
+
+    /** @var {string[]} List of files handled by the Service-Worker [ md5(content) => filename ] */
     private $aFileMD5 = [];
 
-    /**
-     * @var {string} Path to the file containing meta data for already generated Service-Workers
-     */
+    /** @var {string} Path to the file containing meta data for already generated Service-Workers */
     private $sLockFileName = 'sw.lock';
 
-    /**
-     * @var {integer} Internal value used, to force the SW to update even if the filelist has not changed
-     */
+    /** @var {integer} Internal value used, to force the SW to update even if the filelist has not changed */
     private $iTimeStamp = 0;
 
-    /**
-     * @var {boolean} Keeps track of if a new Lockfile and ServiceWorker needed to be generated
-     */
+    /** @var {boolean} Keeps track of if a new Lockfile and ServiceWorker needed to be generated */
     private $bChanged = false;
 
     /**
@@ -123,7 +111,7 @@ class ServiceWorkerGenerator
      * @param  {string} $sCacheName  - the new name of the new cache
      * @return $this
      */
-    public function cachePrefix($sCacheName)
+    public function cacheName($sCacheName)
     {
         $this->bCacheNameSet = true;
 
@@ -254,11 +242,20 @@ class ServiceWorkerGenerator
 
         // Reset the cache name, if it was not set this ru
         if(!$this->bCacheNameSet) 
-            $this->cachePrefix(self::DEFAULT_CACHENAME);
+            $this->cacheName(self::DEFAULT_CACHENAME);
 
-        if ($this->bChanged) {
+        // define which files to cleanup
+        foreach($this->aFileMD5 as $sFilePath => $_) {
+            if(!empty($this->aRegisterdFiles[$sFilePath])) continue;
+            $sTrimmedPath = $this->_trimPath($sFilePath);
+            $this->aFileCleanup[$sTrimmedPath] = $sTrimmedPath;
+        } 
+
+
+        // if a change should be forced update the timestamp, to make sure the browser
+        // reloads the SW
+        if ($this->bChanged) 
             $this->iTimeStamp = time();
-        }
 
         $bCacheFirst = count($this->aCacheFirst) > 0;
         $bCacheClean = count($this->aCacheCleanup) > 0;
@@ -288,14 +285,29 @@ class ServiceWorkerGenerator
             $this->_printJSStrArray('fileCleanup', $this->aFileCleanup);
 
         if($bFileCleanup || $bCacheClean) {
-            if($bCacheClean) $CacheCMDs[] = <<<JS
-                await (async () => {
+            if($bCacheClean) $ActivateCMDs[] = <<<JS
                     for (const key of (await caches.keys())) {
                         if (cacheCleanup.indexOf(key) !== -1) {
                             await caches.delete(key);
                         }
                     } 
-                })() 
+            JS;
+
+            if($bFileCleanup) $ActivateCMDs[] = <<<JS
+                const cache = await caches.open(cache_name);
+
+                if(cache) {
+                    const domain = this.location.origin;
+                    let url = "";
+                    let mtch = -1;
+                    for(const request of await cache.keys()) {
+                        url = request.url.replace(domain, "");
+
+                        if(fileCleanup.indexOf(url) !== -1) 
+                            await cache.delete(request);
+                    }
+                }
+
             JS;
         } 
 
@@ -330,8 +342,12 @@ class ServiceWorkerGenerator
 
                 self.addEventListener("activate", (event) => {
                     // TODO: Make ServiceWorker do the Cleanup thing
-                    {$sJSActivateCMDS}
-                    postEvent("activation_done");
+                    const act = async () => {
+                        {$sJSActivateCMDS}
+                        postEvent("activation_done");
+                    }
+
+                    event.waitUntil(act());
                 })
 
                 self.addEventListener("fetch", (event) => {
@@ -384,9 +400,7 @@ class ServiceWorkerGenerator
         exit;
     }
 
-    /**
-     * @ignore
-     */
+    /** @ignore */
     private function _generateLockFile()
     {
         $sCacheCleanup = var_export($this->aCacheCleanup, true);
@@ -409,9 +423,7 @@ class ServiceWorkerGenerator
         // TODO: Put MD5-Filelist in
     }
 
-    /**
-     * @ignore
-     */
+    /** @ignore */
     private function _recursiveTransfere($fncCallback, $sSrcDir)
     {
         if (
@@ -448,9 +460,7 @@ class ServiceWorkerGenerator
         }
     }
 
-    /**
-     * @ignore
-     */
+    /** @ignore */
     private function _sanitizeFilePath($sFile)
     {
         $sFullName = realpath($sFile);
@@ -464,17 +474,13 @@ class ServiceWorkerGenerator
         return $sFullName;
     }
 
-    /**
-     * @ignore
-     */
+    /** @ignore */
     private function _trimPath($sFile)
     {
         return preg_replace($this->sPregDocRoot, '', $sFile);
     }
 
-    /**
-     * @ignore
-     */
+    /** @ignore */
     private function _addFile(&$aList, $sFile)
     {
         $sFilePath = $this->_sanitizeFilePath($sFile);
@@ -487,6 +493,7 @@ class ServiceWorkerGenerator
         }
 
         $this->aFileMD5[$sFilePath] = $sFileMD5;
+        $this->aRegisterdFiles[$sFilePath] = true; 
 
         $sURLFile = $this->_trimPath($sFilePath);
         $aList[] = $sURLFile;
@@ -494,9 +501,7 @@ class ServiceWorkerGenerator
         return $sURLFile;
     }
 
-    /**
-     * @ignore
-     */
+    /** @ignore */
     private function _sanitizeMetaName($sStr, $sErrorValue, $iErrorCode, $sRegEx = '0-9a-z_\-')
     {
         $sTrimmed = trim($sStr);
@@ -520,9 +525,7 @@ class ServiceWorkerGenerator
         return $sTrimmed;
     }
 
-    /**
-     * @ignore
-     */
+    /** @ignore */
     private function _printJSStrArray($sJSArrName, $arr)
     {
         echo "\nconst {$sJSArrName} = [\n\t",
@@ -530,9 +533,7 @@ class ServiceWorkerGenerator
             "\n];\n\n";
     }
 
-    /**
-     * @ignore
-     */
+    /** @ignore */
     private function _printJSStrArrayKeyed($sJSArrName, $arr)
     {
         echo "\nconst {$sJSArrName} = {\n\t";
@@ -547,9 +548,7 @@ class ServiceWorkerGenerator
     // Template strings
     // ==============================================================================
 
-    /**
-     * @ignore
-     */
+    /** @ignore */
     private static $_swtpl_communications = <<<JS
     
         const clientList = new Map();

@@ -4,9 +4,9 @@
 
     (new rogoss\ServiceWorkerGenerator())
 
-        ->cachePrefix("PHPSWGen_Test")
+        ->cacheName("PHPSW_Test")
 
-        ->enableDirectoryIndexCache("/")
+#        ->enableDirectoryIndexCache("/")
 
         ->fileCacheFirst("./index.html")
         ->fileCacheFirst("./js/sw.js")
