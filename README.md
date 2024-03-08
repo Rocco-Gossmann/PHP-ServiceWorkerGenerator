@@ -69,11 +69,23 @@ Create a `sw.php` file.
         ->cacheName("PHPSWGen_Test") // Define what prefix the cache in the browser will receive
                                        // Needs to be set, if you have multiple ServiceWorkers in different scopes on the same server.
 
+
+
         ->fileCacheFirst("./index.html") // precache the index.html and deliver it CacheFirst
         ->dirCacheFirst("./vendor")      // precache every file in the folder ./vendor and deliver it CacheFirst
 
         ->enableDirectoryIndexCache("/") // Adds a PATH directly to the precache CacheFirst list
                                          // The Path is called directly by the ServiceWorker
+
+
+
+        ->fileCacheOnDemand("onDemand/odm1.txt") // Register File to be cached after it has been requested for the first time (and then delivered CacheFirst after that)
+        ->dirCacheOnDemand("onDemand/dir")        // Register a Directorys files to be cached after they have been requested for the first time (and then delivered CacheFirst after that)
+
+        ->ignoreOnDemandCacheOnRebuild() // by default, the CacheOnDemand Files/Dirs are cleared out every time, the ServiceWorker updates (Requireing them to be downloaded after every update).
+                                         // calling this function will make all Files/Dirs that are cached on demand persistent until you change the cacheName, or remove this function call.
+
+
 
         ->patternFallback("\.svg$", "./img/PhWifiSlashBold.svg") // All requests that end in .svg (or .SVG, it is not case sensitive)
                                                                  // that are not answered with 2xx or 3xx by the Server

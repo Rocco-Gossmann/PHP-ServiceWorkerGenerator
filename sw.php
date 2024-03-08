@@ -4,12 +4,15 @@
 
     (new rogoss\ServiceWorkerGenerator())
 
-        ->cacheName("PHPSW_Test")
+        ->cacheName("PHPSW_Test_001")
 
         ->enableDirectoryIndexCache("/")
 
         ->fileCacheFirst("./index.html")
         ->fileCacheFirst("./js/sw.js")
+
+        ->fileCacheOnDemand("onDemand/odm1.txt")
+        ->dirCacheOnDemand("onDemand/dir")
 
         ->dirCacheFirst("./vendor")
 
