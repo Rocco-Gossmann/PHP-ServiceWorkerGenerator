@@ -1,8 +1,6 @@
 if (navigator.serviceWorker) {
     navigator.serviceWorker
-        .register("./sw.php", {
-            scope: "./",
-        })
+        .register("./sw.php", { scope: "./" })
         .then(function (registration) {
 
             function handleMsg(event) {
@@ -36,16 +34,17 @@ if (navigator.serviceWorker) {
 
             };
 
-            if (registration.active) {
-                registration.active.postMessage("Tune on in.");
-
-            };
-
             if (registration.waiting) {
                 registration.waiting.postMessage("I'm gonna make you wish that I stayed gone.");
                 registration.waiting.postMessage("skip_waiting");
 
             };
+
+            if (registration.active) {
+                registration.active.postMessage("Tune on in.");
+
+            };
+
 
             navigator.serviceWorker.onmessage = handleMsg;
         });

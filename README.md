@@ -24,13 +24,15 @@ Should anything regarding the registered files change, the ServiceWorker will up
 
 Here is an overview of when such a ServiceWorker-Update is triggered.
 
-| function                    | if added                                            | if deleted                                      | on content change                                     |
-| --------------------------- | --------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------- |
-| `fileCacheFirst`            | ✅                                                  | ✅                                              | ✅                                                    |
-| `patternFallback`           | ✅                                                  | ✅                                              | if content of the fallback file changes               |
-| `enableDirectoryIndexCache` | ✅                                                  | ✅                                              | ❌                                                    |
-| `cacheName`                 | always exists (has a default State, if not defined) | delete not possible                             | ✅                                                    |
-| `dirCacheFirst`             | if any file is added to the given directory         | if any file is removed from the given directory | if any of the directorys files binary content changes |
+| function                    | if added                                            | if deleted                                      | on content change                                                                                                                             |
+| --------------------------- | --------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------                                                                                     |
+| `fileCacheFirst`            | ✅                                                  | ✅                                              | ✅                                                                                                                                            |
+| `patternFallback`           | ✅                                                  | ✅                                              | if content of the fallback file changes                                                                                                       |
+| `enableDirectoryIndexCache` | ✅                                                  | ✅                                              | ❌                                                                                                                                            |
+| `fileCacheOnDemand`         | ✅                                                  | ✅                                              | cached file is deleted, and only reloaded on next re quest<br>unless `ignoreOnDemandCacheOnRebuild` is set before printing the ServiceWorker. |
+| `dirCacheOnDemand`          | ✅                                                  | ✅                                              | cached file is deleted, and only reloaded on next re quest<br>unless `ignoreOnDemandCacheOnRebuild` is set before printing the ServiceWorker. |
+| `cacheName`                 | always exists (has a default State, if not defined) | delete not possible                             | ✅                                                                                                                                            |
+| `dirCacheFirst`             | if any file is added to the given directory         | if any file is removed from the given directory | if any of the directorys files binary content changes                                                                                         |
 
 ## Requirements to fullfill
 
@@ -40,8 +42,8 @@ Here is an overview of when such a ServiceWorker-Update is triggered.
 
     -   ✅ precache static files in the client browser and deliver them in a "cacheFirst" approach.
     -   ✅ store files in an "cacheFirst" fashion, and use the cache as a fallback for Offline / error cases.
-    -   ⬜️ store files in an "onDemand" fashion, and deliver them cacheFirst . (means cache them only once they have been requested)
-    -   ⬜️ store files in an "onDemand" fashion, and use the cache as a fallback for Offline / error cases.
+    -   ✅ store files in an "onDemand" fashion, and deliver them cacheFirst . (means cache them only once they have been requested)
+    -   ✅ store files in an "onDemand" fashion, and use the cache as a fallback for Offline / error cases.
 
 -   Maintain a list of files, currently handled by the Service-Worker
 
@@ -91,7 +93,6 @@ Create a `sw.php` file.
                                                                  // that are not answered with 2xx or 3xx by the Server
                                                                  // Will be answered by ServiceWorker with the "./img/PhWifiSlashBold.svg"
 
-        // TODO: add the other functions ...
 
         ->printAndExit() // Finish the generation and end the PHP-Script
     ;

@@ -411,6 +411,7 @@ class ServiceWorkerGenerator
         if ($bFileCleanup || $bCacheClean) {
             if ($bCacheClean)
                 $ActivateCMDs[] = <<<JS
+
                             for (const key of (await caches.keys())) {
                                 if (cacheCleanup.indexOf(key) !== -1) {
                                     await caches.delete(key);
